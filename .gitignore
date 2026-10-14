@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Generated document index
+corpus/processed/
+
+# Python environment files
+.env.*
+!.env.example
