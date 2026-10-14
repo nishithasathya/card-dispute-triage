@@ -1,8 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from enum import Enum
-
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DisputeCategory(str, Enum):
@@ -32,7 +31,6 @@ class DisputeReport(BaseModel):
     )
 
     customer_noticed_alert: bool
-
     credentials_shared: bool
 
     complaint_description: str = Field(
@@ -40,11 +38,33 @@ class DisputeReport(BaseModel):
         max_length=5000,
     )
 
+    @field_validator("case_id", "transaction_type")
+    @classmethod
+    def strip_required_strings(cls, value: str) -> str:
+        value = value.strip()
+
+        if not value:
+            raise ValueError("This field cannot be empty or whitespace.")
+
+        return value
+
+    @field_validator("complaint_description")
+    @classmethod
+    def strip_complaint_description(cls, value: str) -> str:
+        value = value.strip()
+
+        if len(value) < 10:
+            raise ValueError(
+                "Complaint description must contain at least 10 characters."
+            )
+
+        return value
+
     @model_validator(mode="after")
     def validate_dates(self):
         if self.report_date < self.transaction_date:
             raise ValueError(
-                "Report date cannot precede transaction date."
+                "Report date cannot be before transaction date."
             )
 
         if self.transaction_date > date.today():
@@ -57,17 +77,14 @@ class DisputeReport(BaseModel):
 
 class DisputeClassification(BaseModel):
     category: DisputeCategory
-    explanation: str
+    explanation: str = Field(min_length=1)
 
 
 class LiabilityRecommendation(BaseModel):
     case_id: str
     category: DisputeCategory
-
     recommendation: str
     reasoning: str
-
     citations: list[str] = Field(default_factory=list)
-
-    requires_human_review: bool
+    requires_human_review: bool = True
     escalation_reason: str | None = None
