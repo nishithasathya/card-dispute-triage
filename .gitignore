@@ -224,3 +224,23 @@ corpus/processed/
 # Python environment files
 .env.*
 !.env.example
+
+# macOS metadata
+.DS_Store
+
+# Runtime and generated data
+data/
+# Local development
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Generated evaluation and load-test artifacts
+evaluation/__pycache__/

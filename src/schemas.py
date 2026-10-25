@@ -1,7 +1,13 @@
 from datetime import date
 from decimal import Decimal
 from enum import Enum
-from pydantic import BaseModel, Field, field_validator, model_validator
+
+from pydantic import (
+    BaseModel,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 
 class DisputeCategory(str, Enum):
@@ -33,6 +39,12 @@ class DisputeReport(BaseModel):
     customer_noticed_alert: bool
     credentials_shared: bool
 
+    # Optional timeline information.
+    # These dates should only be supplied when known.
+    alert_sent_date: date | None = None
+    alert_noticed_date: date | None = None
+    credentials_shared_date: date | None = None
+
     complaint_description: str = Field(
         min_length=10,
         max_length=5000,
@@ -44,7 +56,9 @@ class DisputeReport(BaseModel):
         value = value.strip()
 
         if not value:
-            raise ValueError("This field cannot be empty or whitespace.")
+            raise ValueError(
+                "This field cannot be empty or whitespace."
+            )
 
         return value
 
@@ -70,6 +84,39 @@ class DisputeReport(BaseModel):
         if self.transaction_date > date.today():
             raise ValueError(
                 "Transaction date cannot be in the future."
+            )
+
+        if (
+            self.alert_sent_date is not None
+            and self.alert_sent_date < self.transaction_date
+        ):
+            raise ValueError(
+                "Alert sent date cannot be before the transaction date."
+            )
+
+        if (
+            self.alert_noticed_date is not None
+            and self.alert_sent_date is not None
+            and self.alert_noticed_date < self.alert_sent_date
+        ):
+            raise ValueError(
+                "Alert noticed date cannot be before the alert sent date."
+            )
+
+        if (
+            self.credentials_shared_date is not None
+            and self.credentials_shared_date > self.report_date
+        ):
+            raise ValueError(
+                "Credentials shared date cannot be after the report date."
+            )
+
+        if (
+            self.alert_noticed_date is not None
+            and self.alert_noticed_date > self.report_date
+        ):
+            raise ValueError(
+                "Alert noticed date cannot be after the report date."
             )
 
         return self

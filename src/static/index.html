@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Card Dispute Triage Service</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 28px 16px;
+            background: #f3f5f9;
+            color: #1f2937;
+            font-family: Arial, sans-serif;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        h1 {
+            color: #172554;
+            margin-bottom: 6px;
+        }
+
+        h2 {
+            color: #1e3a8a;
+            font-size: 20px;
+            margin-top: 0;
+        }
+
+        h3 {
+            font-size: 15px;
+            margin: 0;
+        }
+
+        .subtitle {
+            color: #64748b;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 22px;
+            margin-bottom: 18px;
+            box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            background: white;
+            color: #1f2937;
+            font-size: 14px;
+        }
+
+        textarea {
+            min-height: 95px;
+            resize: vertical;
+        }
+
+        .full {
+            grid-column: 1 / -1;
+        }
+
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .checkbox-row input {
+            width: auto;
+        }
+
+        .checkbox-row label {
+            margin: 0;
+        }
+
+        button, .button {
+            border: none;
+            border-radius: 7px;
+            padding: 11px 16px;
+            background: #1d4ed8;
+            color: white;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1e40af;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: wait;
+        }
+
+        .submit-button {
+            margin-top: 18px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .success {
+            background: #dcfce7;
+            color: #166534;
+            padding: 12px;
+            border-radius: 7px;
+            margin-top: 14px;
+        }
+
+        .error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 12px;
+            border-radius: 7px;
+            margin-top: 14px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        /* Prompt-injection security warning */
+        #securityWarning {
+            border: 2px solid #dc2626;
+            background: #fef2f2;
+            color: #991b1b;
+            border-radius: 10px;
+            padding: 18px 20px;
+            margin-bottom: 18px;
+            box-shadow: 0 3px 12px rgba(220, 38, 38, 0.08);
+        }
+
+        #securityWarning strong {
+            display: block;
+            font-size: 1.05rem;
+            margin-bottom: 8px;
+        }
+
+        #securityWarning p {
+            margin: 0;
+            line-height: 1.6;
+        }
+
+        .result-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .result-box {
+            padding: 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            min-width: 0;
+        }
+
+        .result-label {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+
+        .result-value {
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .explanation {
+            margin-top: 14px;
+            padding: 14px;
+            border-radius: 8px;
+            background: #f8fafc;
+        }
+
+        .badge {
+            display: inline-block;
+            border-radius: 20px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge.warning {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge.good {
+            background: #dcfce7;
+            color: #166534;
+        }
+
+        .evidence-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .evidence-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        details.evidence-item {
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            overflow: hidden;
+            background: white;
+        }
+
+        details.evidence-item summary {
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 15px;
+            cursor: pointer;
+            background: #f8fafc;
+        }
+
+        details.evidence-item summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.evidence-item summary:hover {
+            background: #eff6ff;
+        }
+
+        .evidence-title {
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .evidence-meta {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 3px;
+        }
+
+        .expand-label {
+            flex-shrink: 0;
+            color: #1d4ed8;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .evidence-body {
+            padding: 16px;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .passage-text {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            line-height: 1.7;
+            font-size: 14px;
+            background: #f8fafc;
+            padding: 14px;
+            border-radius: 7px;
+        }
+
+        .notice {
+            margin-top: 16px;
+            padding: 13px;
+            background: #fffbeb;
+            border-left: 4px solid #f59e0b;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .muted {
+            color: #64748b;
+            font-size: 13px;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 16px 10px;
+            }
+
+            .grid, .result-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .full {
+                grid-column: auto;
+            }
+
+            .card {
+                padding: 17px;
+            }
+
+            #securityWarning {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+<div class="container">
+
+    <h1>Card Dispute Triage Service</h1>
+    <p class="subtitle">
+        AI-assisted transaction dispute classification and regulatory evidence retrieval.
+    </p>
+
+    <section class="card">
+        <h2>Submit a dispute</h2>
+
+        <form id="triageForm">
+            <div class="grid">
+
+                <div>
+                    <label for="caseId">Case ID</label>
+                    <input id="caseId" maxlength="64" required placeholder="CASE-001">
+                </div>
+
+                <div>
+                    <label for="transactionType">Transaction type</label>
+                    <select id="transactionType" required>
+                        <option value="card_not_present">Card not present</option>
+                        <option value="skimming">Skimming</option>
+                        <option value="upi_social_engineering">UPI social engineering</option>
+                        <option value="merchant_dispute">Merchant dispute</option>
+                        <option value="duplicate_charge">Duplicate charge</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="transactionDate">Transaction date</label>
+                    <input id="transactionDate" type="date" required>
+                </div>
+
+                <div>
+                    <label for="reportDate">Date reported to bank</label>
+                    <input id="reportDate" type="date" required>
+                </div>
+
+                <div>
+                    <label for="amount">Transaction amount (₹)</label>
+                    <input id="amount" type="number" min="0.01" step="0.01" required>
+                </div>
+
+                <div>
+                    <label for="alertSentDate">Date bank sent alert (optional)</label>
+                    <input id="alertSentDate" type="date">
+                </div>
+
+                <div class="full">
+                    <label for="description">Complaint description</label>
+                    <textarea
+                        id="description"
+                        minlength="10"
+                        maxlength="5000"
+                        placeholder="Describe what happened..."
+                        required
+                    ></textarea>
+                </div>
+            </div>
+
+            <div class="checkbox-row">
+                <input id="noticedAlert" type="checkbox">
+                <label for="noticedAlert">I noticed the transaction alert</label>
+            </div>
+
+            <div class="checkbox-row">
+                <input id="credentialsShared" type="checkbox">
+                <label for="credentialsShared">I shared an OTP or payment credentials</label>
+            </div>
+
+            <button id="submitButton" class="submit-button" type="submit">
+                Analyse dispute
+            </button>
+        </form>
+
+        <div id="message" aria-live="polite"></div>
+    </section>
+
+    <div id="results" class="hidden">
+
+        <!-- Displayed only when the backend detects potential prompt injection. -->
+        <div
+            id="securityWarning"
+            class="hidden"
+            role="alert"
+            aria-live="assertive"
+        >
+            <strong>⚠️ Security Warning: Potential Prompt Injection Detected</strong>
+            <p>
+                The complaint contains wording that may be attempting to manipulate
+                the AI system. The suspicious instructions were excluded from the
+                complaint-specific retrieval query. This case has been escalated
+                for human review. No automated liability decision will be made.
+                The original complaint remains available for the reviewer.
+            </p>
+            <p style="margin-top: 8px; font-size: 13px;">
+                Detection is heuristic and may not identify every possible attack.
+            </p>
+        </div>
+
+        <section class="card">
+            <h2>Analysis results</h2>
+            <div id="summary" class="result-grid"></div>
+        </section>
+
+        <section class="card">
+            <h2>Classification</h2>
+            <div id="classification" class="result-grid"></div>
+        </section>
+
+        <section class="card">
+            <h2>Reporting delay</h2>
+            <div id="reporting" class="result-grid"></div>
+        </section>
+
+        <section class="card">
+            <h2>Recommendation and routing</h2>
+            <div id="recommendation" class="result-grid"></div>
+        </section>
+
+        <section class="card">
+            <h2>Evidence verification</h2>
+            <div id="verification" class="result-grid"></div>
+        </section>
+
+        <section class="card">
+            <div class="evidence-header">
+                <div>
+                    <h2 style="margin-bottom:4px">Regulatory evidence</h2>
+                    <div id="evidenceCount" class="muted"></div>
+                </div>
+                <div>
+                    <button type="button" id="expandAllButton">Expand all</button>
+                    <button type="button" id="collapseAllButton">Collapse all</button>
+                </div>
+            </div>
+
+            <div id="evidence" class="evidence-list"></div>
+
+            <div class="notice">
+                <strong>Important:</strong> This service provides preliminary
+                recommendations and supporting evidence. Structural verification
+                checks passage integrity; it does not establish legal applicability
+                or determine liability. A human reviewer must assess the cited
+                provisions and case facts. The system does not issue credit or
+                close disputes.
+            </div>
+        </section>
+
+    </div>
+</div>
+
+<script>
+"use strict";
+
+const form = document.getElementById("triageForm");
+const submitButton = document.getElementById("submitButton");
+const message = document.getElementById("message");
+const results = document.getElementById("results");
+const securityWarning = document.getElementById("securityWarning");
+
+function addResult(parent, label, value) {
+    const box = document.createElement("div");
+    box.className = "result-box";
+
+    const heading = document.createElement("div");
+    heading.className = "result-label";
+    heading.textContent = label;
+
+    const content = document.createElement("div");
+    content.className = "result-value";
+    content.textContent =
+        value === undefined || value === null || value === ""
+            ? "Not supplied"
+            : String(value);
+
+    box.append(heading, content);
+    parent.appendChild(box);
+}
+
+function formatBoolean(value) {
+    if (value === true) return "Yes";
+    if (value === false) return "No";
+    return "Not supplied";
+}
+
+function addEvidenceItem(parent, passage, index) {
+    const details = document.createElement("details");
+    details.className = "evidence-item";
+
+    const summary = document.createElement("summary");
+    const titleContainer = document.createElement("div");
+
+    const title = document.createElement("div");
+    title.className = "evidence-title";
+    title.textContent = passage.source || "Unknown source";
+
+    const meta = document.createElement("div");
+    meta.className = "evidence-meta";
+    meta.textContent =
+        `Page ${passage.page ?? "Unknown"} · Passage ${index + 1}`;
+
+    titleContainer.append(title, meta);
+
+    const expandLabel = document.createElement("span");
+    expandLabel.className = "expand-label";
+    expandLabel.textContent = "View evidence +";
+
+    summary.append(titleContainer, expandLabel);
+    details.appendChild(summary);
+
+    details.addEventListener("toggle", () => {
+        expandLabel.textContent = details.open
+            ? "Hide evidence −"
+            : "View evidence +";
+    });
+
+    const body = document.createElement("div");
+    body.className = "evidence-body";
+
+    const metaGrid = document.createElement("div");
+    metaGrid.className = "result-grid";
+
+    addResult(metaGrid, "Source", passage.source);
+    addResult(metaGrid, "Page", passage.page);
+    addResult(metaGrid, "Chunk ID", passage.chunk_id);
+    addResult(metaGrid, "Retrieval score", passage.combined_score);
+
+    body.appendChild(metaGrid);
+
+    if (
+        Array.isArray(passage.matched_queries) &&
+        passage.matched_queries.length > 0
+    ) {
+        const matched = document.createElement("p");
+        matched.className = "muted";
+        matched.textContent =
+            "Matched queries: " + passage.matched_queries.join("; ");
+        body.appendChild(matched);
+    }
+
+    const passageHeading = document.createElement("h3");
+    passageHeading.style.marginTop = "16px";
+    passageHeading.style.marginBottom = "8px";
+    passageHeading.textContent = "Passage text";
+
+    const passageText = document.createElement("div");
+    passageText.className = "passage-text";
+    passageText.textContent =
+        passage.text || "No passage text supplied.";
+
+    body.append(passageHeading, passageText);
+    details.appendChild(body);
+    parent.appendChild(details);
+}
+
+function displayResults(response) {
+    const data = response.result || {};
+
+    results.classList.remove("hidden");
+
+    // Trust the backend's explicit Boolean flag; do not infer injection
+    // detection from complaint text in the browser.
+    const injectionDetected =
+        data.prompt_injection_detected === true;
+
+    securityWarning.classList.toggle("hidden", !injectionDetected);
+
+    const sections = {
+        summary: document.getElementById("summary"),
+        classification: document.getElementById("classification"),
+        reporting: document.getElementById("reporting"),
+        recommendation: document.getElementById("recommendation"),
+        verification: document.getElementById("verification"),
+        evidence: document.getElementById("evidence")
+    };
+
+    Object.values(sections).forEach(section => section.replaceChildren());
+
+    // Summary
+    addResult(
+        sections.summary,
+        "Case ID",
+        response.case_id || data.case_id
+    );
+    addResult(
+        sections.summary,
+        "Status",
+        response.status || data.status
+    );
+    addResult(
+        sections.summary,
+        "Transaction amount",
+        data.transaction_amount == null
+            ? undefined
+            : `₹${data.transaction_amount}`
+    );
+    addResult(
+        sections.summary,
+        "Transaction type",
+        data.transaction_type
+    );
+    addResult(
+        sections.summary,
+        "Human review required",
+        formatBoolean(
+            response.requires_human_review ?? data.requires_human_review
+        )
+    );
+    addResult(
+        sections.summary,
+        "Automated liability decision",
+        formatBoolean(
+            response.automated_liability_decision ??
+            data.automated_liability_decision
+        )
+    );
+    addResult(
+        sections.summary,
+        "Prompt injection detected",
+        formatBoolean(injectionDetected)
+    );
+
+    // Classification
+    const classification = data.classification || {};
+    addResult(
+        sections.classification,
+        "Category",
+        classification.category
+    );
+    addResult(
+        sections.classification,
+        "Explanation",
+        classification.explanation
+    );
+
+    // Reporting delay
+    const delay = data.reporting_delay_calendar_days;
+    addResult(
+        sections.reporting,
+        "Reporting delay",
+        delay == null ? "Unknown" : `${delay} calendar day(s)`
+    );
+    addResult(
+        sections.reporting,
+        "Transaction date",
+        data.transaction_date
+    );
+    addResult(
+        sections.reporting,
+        "Report date",
+        data.report_date
+    );
+
+    // Recommendation and routing
+    const routing = data.routing || {};
+
+    addResult(
+        sections.recommendation,
+        "Recommendation",
+        data.recommendation
+    );
+    addResult(
+        sections.recommendation,
+        "Recommended action",
+        routing.recommended_action
+    );
+    addResult(
+        sections.recommendation,
+        "Routing reasoning",
+        Array.isArray(routing.reasoning)
+            ? routing.reasoning.join(" ")
+            : routing.reasoning
+    );
+    addResult(
+        sections.recommendation,
+        "Escalation required",
+        formatBoolean(data.escalation_required)
+    );
+    addResult(
+        sections.recommendation,
+        "Escalation reason",
+        data.escalation_reason
+    );
+
+    // Evidence verification
+    const verification = data.evidence_verification || {};
+
+    addResult(
+        sections.verification,
+        "Total passages",
+        verification.total_passages
+    );
+    addResult(
+        sections.verification,
+        "Valid passages",
+        verification.valid_passages
+    );
+    addResult(
+        sections.verification,
+        "Invalid passages",
+        verification.invalid_passages
+    );
+    addResult(
+        sections.verification,
+        "All passages structurally valid",
+        formatBoolean(verification.all_valid)
+    );
+
+    // Evidence: collapsed by default
+    const passages = Array.isArray(data.evidence) ? data.evidence : [];
+
+    document.getElementById("evidenceCount").textContent =
+        `${passages.length} passage(s) retrieved · Expand a passage to view its contents.`;
+
+    if (passages.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "result-box";
+        empty.textContent =
+            "No evidence passages were returned. Escalate for human review.";
+        sections.evidence.appendChild(empty);
+        return;
+    }
+
+    passages.forEach((passage, index) => {
+        addEvidenceItem(sections.evidence, passage, index);
+    });
+}
+
+function showError(text) {
+    message.replaceChildren();
+
+    const error = document.createElement("div");
+    error.className = "error";
+    error.textContent = text;
+
+    message.appendChild(error);
+}
+
+form.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    submitButton.disabled = true;
+    submitButton.textContent = "Analysing...";
+    message.replaceChildren();
+    results.classList.add("hidden");
+    securityWarning.classList.add("hidden");
+
+    const report = {
+        case_id: document.getElementById("caseId").value.trim(),
+        transaction_type: document.getElementById("transactionType").value,
+        transaction_date: document.getElementById("transactionDate").value,
+        report_date: document.getElementById("reportDate").value,
+        transaction_amount: Number(
+            document.getElementById("amount").value
+        ),
+        customer_noticed_alert:
+            document.getElementById("noticedAlert").checked,
+        credentials_shared:
+            document.getElementById("credentialsShared").checked,
+        complaint_description:
+            document.getElementById("description").value.trim()
+    };
+
+    const alertSentDate =
+        document.getElementById("alertSentDate").value;
+
+    if (alertSentDate) {
+        report.alert_sent_date = alertSentDate;
+    }
+
+    try {
+        const response = await fetch("/triage", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ report })
+        });
+
+        const responseText = await response.text();
+        let data;
+
+        try {
+            data = JSON.parse(responseText);
+        } catch {
+            throw new Error(
+                `Unexpected API response (HTTP ${response.status}).`
+            );
+        }
+
+        if (!response.ok) {
+            let detail = data.detail;
+
+            if (Array.isArray(detail)) {
+                detail = detail.map(error => {
+                    const location = Array.isArray(error.location)
+                        ? error.location.join(".")
+                        : "";
+
+                    return `${location}: ${
+                        error.message || error.type || "Invalid input"
+                    }`;
+                }).join("\n");
+            }
+
+            throw new Error(
+                typeof detail === "string"
+                    ? detail
+                    : JSON.stringify(detail || data, null, 2)
+            );
+        }
+
+        displayResults(data);
+
+        const success = document.createElement("div");
+        success.className = "success";
+        success.textContent =
+            "Analysis completed. Human review is required before any liability decision.";
+        message.appendChild(success);
+
+        results.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+        });
+
+    } catch (error) {
+        showError(`Unable to complete triage: ${error.message}`);
+    } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Analyse dispute";
+    }
+});
+
+document.getElementById("expandAllButton").addEventListener("click", () => {
+    document.querySelectorAll(".evidence-item").forEach(item => {
+        item.open = true;
+    });
+});
+
+document.getElementById("collapseAllButton").addEventListener("click", () => {
+    document.querySelectorAll(".evidence-item").forEach(item => {
+        item.open = false;
+    });
+});
+</script>
+
+</body>
+</html>

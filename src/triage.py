@@ -10,7 +10,7 @@ from src.verification import EvidenceVerifier
 
 
 class RegulatoryRetriever:
-    """Retrieves relevant passages from the local regulatory document index."""
+    """Retrieve and rank relevant passages from regulatory documents."""
 
     def __init__(self, index_path: str = "corpus/processed/faiss_index"):
         embeddings = HuggingFaceEmbeddings(
@@ -25,35 +25,103 @@ class RegulatoryRetriever:
             allow_dangerous_deserialization=True,
         )
 
-    def search(self, query: str, k: int = 3) -> list[dict]:
-        """Return retrieved passages with their source metadata."""
+    @staticmethod
+    def _keyword_score(query: str, text: str) -> float:
+        """
+        Calculate lexical overlap between a query and passage.
 
-        results = self.vectorstore.similarity_search_with_score(query, k=k)
+        This is a heuristic relevance signal, not a legal entailment check.
+        """
+
+        stopwords = {
+            "the", "a", "an", "and", "or", "of", "to", "in",
+            "for", "on", "is", "are", "was", "were", "with",
+            "by", "from", "that", "this", "it", "be", "as",
+            "their", "they", "them", "which", "where", "when",
+            "what", "who", "how", "after", "before",
+        }
+
+        def tokenize(value: str) -> set[str]:
+            tokens = set()
+
+            for word in value.lower().split():
+                word = word.strip(".,:;!?()[]{}\"'")
+
+                if len(word) > 2 and word not in stopwords:
+                    tokens.add(word)
+
+            return tokens
+
+        query_terms = tokenize(query)
+        passage_terms = tokenize(text)
+
+        if not query_terms:
+            return 0.0
+
+        return len(query_terms & passage_terms) / len(query_terms)
+
+    def search(self, query: str, k: int = 3) -> list[dict]:
+        """Retrieve candidate passages and rank them by hybrid score."""
+
+        if k <= 0:
+            return []
+
+        total_vectors = self.vectorstore.index.ntotal
+
+        if total_vectors == 0:
+            return []
+
+        fetch_k = min(max(k * 4, 12), total_vectors)
+
+        results = self.vectorstore.similarity_search_with_score(
+            query,
+            k=fetch_k,
+        )
 
         passages = []
 
-        for document, score in results:
+        for document, distance in results:
             metadata = document.metadata
+            text = document.page_content
+
+            keyword_score = self._keyword_score(query, text)
+
+            # FAISS L2 distance is not a calibrated probability.
+            vector_score = 1.0 / (
+                1.0 + max(float(distance), 0.0)
+            )
+
+            combined_score = (
+                0.65 * vector_score
+                + 0.35 * keyword_score
+            )
 
             passages.append(
                 {
                     "source": metadata.get("source", "unknown"),
                     "page": metadata.get("page", "unknown"),
                     "chunk_id": metadata.get("chunk_id", "unknown"),
-                    "text": document.page_content,
-                    "retrieval_score": float(score),
+                    "text": text,
+                    "retrieval_score": float(distance),
+                    "keyword_score": float(keyword_score),
+                    "combined_score": float(combined_score),
                 }
             )
 
-        return passages
+        passages.sort(
+            key=lambda passage: passage["combined_score"],
+            reverse=True,
+        )
+
+        return passages[:k]
 
 
 class DisputeTriageEngine:
     """
-    Performs preliminary dispute classification, regulatory evidence
-    retrieval, structural evidence verification, and workflow routing.
+    Classify disputes, retrieve regulatory evidence, validate evidence
+    structure, and recommend the next workflow action.
 
-    The engine does not make final liability decisions.
+    The engine never makes a final liability decision.
     """
 
     def __init__(self):
@@ -63,10 +131,15 @@ class DisputeTriageEngine:
         self.decision_router = DisputeDecisionRouter()
 
     @staticmethod
-    def build_queries(report: DisputeReport) -> list[str]:
-        """Build retrieval queries from the dispute facts."""
+    def build_queries(
+        report: DisputeReport,
+        category: str | None = None,
+    ) -> list[str]:
+        """Build general and category-specific regulatory queries."""
 
-        reporting_delay = (report.report_date - report.transaction_date).days
+        reporting_delay = (
+            report.report_date - report.transaction_date
+        ).days
 
         queries = [
             (
@@ -95,65 +168,244 @@ class DisputeTriageEngine:
             ),
         ]
 
-        if report.credentials_shared:
+        if category == "duplicate_charge":
+            queries.extend(
+                [
+                    (
+                        "SBI policy Section 4.1(a): unauthorised or "
+                        "erroneous debit, reversal, value-dated credit, "
+                        "detection, information, and due verification"
+                    ),
+                    (
+                        "SBI policy Section 4.2(c): charges levied in "
+                        "violation of an arrangement or inadvertently, "
+                        "reversal of charges, agreed terms and conditions"
+                    ),
+                    (
+                        "SBI policy Section 4.1(c): verification timeline "
+                        "for unauthorised or erroneous debits and "
+                        "third-party involvement"
+                    ),
+                    (
+                        "Duplicate transaction, duplicate debit, "
+                        "erroneous account entry, inadvertent charge "
+                        "and reversal procedure"
+                    ),
+                ]
+            )
+
+        elif category == "merchant_dispute":
+            queries.extend(
+                [
+                    (
+                        "Merchant dispute, goods or services refund, "
+                        "and disputed card transaction"
+                    ),
+                    (
+                        "Card network chargeback, disputed merchant "
+                        "transaction, and applicable procedure"
+                    ),
+                ]
+            )
+
+        elif category == "card_not_present":
+            queries.extend(
+                [
+                    (
+                        "Remote online card-not-present transaction, "
+                        "unauthorised electronic banking liability"
+                    ),
+                    (
+                        "Unauthorised online card transaction, "
+                        "customer reporting, and liability provisions"
+                    ),
+                ]
+            )
+
+        elif category == "skimming":
+            queries.extend(
+                [
+                    (
+                        "Card skimming, copying, theft, and unauthorised "
+                        "electronic banking transaction"
+                    ),
+                    (
+                        "Loss, theft, or copying of payment card, "
+                        "customer notification, and bank action"
+                    ),
+                ]
+            )
+
+        elif category == "upi_social_engineering":
+            queries.extend(
+                [
+                    (
+                        "UPI social engineering, impersonation scam, "
+                        "fraud, customer reporting, and liability"
+                    ),
+                    (
+                        "OTP sharing, credential sharing, impersonation, "
+                        "customer negligence, and unauthorised transaction"
+                    ),
+                ]
+            )
+
+        elif category == "unknown":
             queries.append(
-                "Customer shared credentials or OTP with another person "
-                "and the circumstances relevant to customer liability"
+                "Banking complaint classification, customer protection, "
+                "and grievance procedures"
+            )
+
+        if report.credentials_shared:
+            queries.extend(
+                [
+                    (
+                        "Customer shared credentials or OTP with another "
+                        "person and circumstances relevant to liability"
+                    ),
+                    (
+                        "Customer deceived by caller impersonating bank "
+                        "and shared OTP or payment credentials"
+                    ),
+                ]
             )
 
         if report.customer_noticed_alert:
             queries.append(
-                "Customer received or noticed a transaction alert and "
+                "Customer received or noticed transaction alert and "
                 "subsequently reported an unauthorised transaction"
+            )
+
+        if report.alert_sent_date:
+            queries.append(
+                "Date of communication of unauthorised transaction, "
+                "SMS alert, and calculation of reporting delay"
             )
 
         return queries
 
     def collect_evidence(self, report: DisputeReport) -> dict:
-        """Classify the dispute, retrieve evidence, verify its structure,
-        and recommend the appropriate next workflow action.
+        """
+        Classify the dispute, retrieve evidence using multiple queries,
+        combine rankings using Reciprocal Rank Fusion (RRF), and route
+        the case for human review.
+
+        Evidence selection encourages source diversity without treating
+        the presence of a source as proof that its passages are relevant.
         """
 
         classification = self.classifier.classify(report)
-        queries = self.build_queries(report)
 
-        # Deduplicate passages returned by multiple queries.
+        queries = self.build_queries(
+            report,
+            category=classification.category.value,
+        )
+
+        rrf_scores = {}
         evidence_by_id = {}
+        rrf_constant = 60
 
+        # Retrieve candidates for each query and combine their rankings.
         for query in queries:
-            passages = self.retriever.search(query, k=3)
+            passages = self.retriever.search(query, k=5)
 
-            for passage in passages:
+            for rank, passage in enumerate(passages, start=1):
                 chunk_id = passage["chunk_id"]
 
-                if chunk_id not in evidence_by_id:
-                    evidence_by_id[chunk_id] = passage
+                if chunk_id == "unknown":
+                    key = (
+                        passage["source"],
+                        passage["page"],
+                        passage["text"],
+                    )
+                else:
+                    key = chunk_id
 
-        evidence = list(evidence_by_id.values())
+                rrf_scores[key] = rrf_scores.get(key, 0.0) + (
+                    1.0 / (rrf_constant + rank)
+                )
 
-        # Check whether retrieved evidence has the required structure.
+                existing = evidence_by_id.get(key)
+
+                if (
+                    existing is None
+                    or passage["combined_score"]
+                    > existing["combined_score"]
+                ):
+                    evidence_by_id[key] = passage.copy()
+
+        evidence = []
+
+        for key, passage in evidence_by_id.items():
+            passage["fusion_score"] = rrf_scores[key]
+            evidence.append(passage)
+
+        evidence.sort(
+            key=lambda passage: passage["fusion_score"],
+            reverse=True,
+        )
+
+        # Preserve the best-ranked passage from each available source.
+        # Then fill remaining positions using the RRF ranking.
+        selected = []
+        selected_ids = set()
+        selected_sources = set()
+
+        for passage in evidence:
+            source = passage["source"]
+            chunk_id = passage["chunk_id"]
+
+            if source not in selected_sources:
+                selected.append(passage)
+                selected_ids.add(chunk_id)
+                selected_sources.add(source)
+
+            if len(selected) >= 15:
+                break
+
+        for passage in evidence:
+            if len(selected) >= 15:
+                break
+
+            chunk_id = passage["chunk_id"]
+
+            if chunk_id not in selected_ids:
+                selected.append(passage)
+                selected_ids.add(chunk_id)
+
+        # Maintain descending RRF order in the final evidence list.
+        selected.sort(
+            key=lambda passage: passage["fusion_score"],
+            reverse=True,
+        )
+
+        evidence = selected
+
         evidence_verification = self.verifier.verify_evidence(evidence)
 
-        reporting_delay = (report.report_date - report.transaction_date).days
+        reporting_delay = (
+            report.report_date - report.transaction_date
+        ).days
 
         escalation_reasons = [
             "Human review is required before any liability decision.",
             (
-                "Retrieved passages must be checked for applicability "
-                "to the transaction and relevant regulatory provisions."
+                "A reviewer must assess whether the retrieved provisions "
+                "apply to the specific transaction and complaint."
             ),
         ]
 
         if classification.category.value == "unknown":
             escalation_reasons.append(
-                "The dispute description does not support a confident "
+                "The complaint does not support a confident "
                 "preliminary classification."
             )
 
         if report.credentials_shared:
             escalation_reasons.append(
-                "Credentials were reportedly shared. The circumstances "
-                "and applicability of relevant provisions require review."
+                "Credentials were reportedly shared. The circumstances, "
+                "including possible deception or impersonation, require "
+                "human assessment."
             )
 
         if not evidence:
@@ -163,8 +415,7 @@ class DisputeTriageEngine:
 
         if not evidence_verification["all_valid"]:
             escalation_reasons.append(
-                "One or more retrieved passages failed structural "
-                "evidence validation."
+                "One or more passages failed structural evidence validation."
             )
 
         status = (
@@ -173,7 +424,6 @@ class DisputeTriageEngine:
             else "review_required"
         )
 
-        # Assemble the preliminary triage result.
         result = {
             "case_id": report.case_id,
             "status": status,
@@ -189,16 +439,14 @@ class DisputeTriageEngine:
             "evidence": evidence,
             "evidence_verification": evidence_verification,
             "recommendation": (
-                "No liability determination has been made. A reviewer "
-                "must assess the case facts and applicable regulatory "
-                "provisions before deciding the next action."
+                "No liability determination has been made. A human "
+                "reviewer must assess the case facts and applicable "
+                "regulatory provisions before deciding the next action."
             ),
             "requires_human_review": True,
             "escalation_reason": " ".join(escalation_reasons),
         }
 
-        # Recommend the next workflow action without making a liability
-        # decision.
         result["routing"] = self.decision_router.route(result)
 
         return result
@@ -230,10 +478,7 @@ if __name__ == "__main__":
     print(f"Explanation: {result['classification']['explanation']}")
 
     print("\n--- Reporting Delay ---")
-    print(
-        "Calendar days: "
-        f"{result['reporting_delay_calendar_days']}"
-    )
+    print(f"Calendar days: {result['reporting_delay_calendar_days']}")
 
     print("\n--- Retrieved Evidence ---")
     print(f"Passages retrieved: {len(result['evidence'])}")
@@ -243,6 +488,10 @@ if __name__ == "__main__":
         print(f"Source: {passage['source']}")
         print(f"Page: {passage['page']}")
         print(f"Chunk ID: {passage['chunk_id']}")
+        print(f"Retrieval distance: {passage['retrieval_score']:.4f}")
+        print(f"Keyword score: {passage['keyword_score']:.4f}")
+        print(f"Combined score: {passage['combined_score']:.4f}")
+        print(f"Fusion score: {passage['fusion_score']:.4f}")
         print(f"Text: {passage['text'][:300]}")
 
     print("\n--- Evidence Verification ---")
