@@ -21,6 +21,30 @@ class DisputeDecisionRouter:
         valid_count = verification.get("valid_passages", 0)
         invalid_count = verification.get("invalid_passages", 0)
 
+        dispute_facts = triage_result.get("dispute_analysis") or {}
+
+        reporting_delay = dispute_facts.get(
+            "reporting_delay_calendar_days"
+        )
+
+        credentials_shared = dispute_facts.get("credentials_shared")
+        complaint = str(
+            dispute_facts.get("complaint_description", "")
+        ).casefold()
+
+        impersonation_indicators = (
+            "impersonat",
+            "pretending to be",
+            "posing as",
+            "caller claiming to be",
+            "pretend to be",
+        )
+
+        impersonation_detected = any(
+            indicator in complaint
+            for indicator in impersonation_indicators
+        )
+
         reasons = []
 
         # Rule 1: Missing evidence requires escalation.
@@ -37,14 +61,34 @@ class DisputeDecisionRouter:
                 "One or more retrieved passages failed structural validation."
             )
 
-        # Rule 3: Uncertain classification requires further review.
+        # Rule 3: Delayed reporting combined with shared credentials and
+        # possible impersonation requires explicit human escalation.
+        elif (
+            reporting_delay is not None
+            and reporting_delay >= 14
+            and credentials_shared is True
+            and impersonation_detected
+        ):
+            action = "ESCALATE_FOR_HUMAN_REVIEW"
+            reasons.append(
+                "The report describes delayed reporting, shared credentials, "
+                "and possible impersonation. These circumstances require "
+                "individual assessment by a human reviewer."
+            )
+            reasons.append(
+                "Do not infer customer negligence or determine liability "
+                "from these facts alone. The reviewer must examine the "
+                "applicable regulatory and bank-policy provisions."
+            )
+
+        # Rule 4: Uncertain classification requires further review.
         elif category == "unknown":
             action = "ESCALATE_FOR_CLASSIFICATION_REVIEW"
             reasons.append(
                 "The dispute could not be confidently classified."
             )
 
-        # Rule 4: Otherwise, prepare the case for a human reviewer.
+        # Rule 5: Otherwise, prepare the case for a human reviewer.
         else:
             action = "PREPARE_FOR_HUMAN_REVIEW"
             reasons.append(
